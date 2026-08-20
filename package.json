@@ -1,0 +1,103 @@
+{
+  "name": "local-ignore",
+  "displayName": "Local Ignore",
+  "description": "Hide paths from git status and commits on this machine only: exclude + skip-worktree, every apply.",
+  "version": "0.1.0",
+  "publisher": "galloween",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "SCM Providers"
+  ],
+  "keywords": [
+    "git",
+    "ignore",
+    "exclude",
+    "skip-worktree",
+    "local"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "localIgnore.apply",
+        "title": "Local Ignore: Apply Now"
+      },
+      {
+        "command": "localIgnore.restore",
+        "title": "Local Ignore: Restore Path…"
+      },
+      {
+        "command": "localIgnore.unstick",
+        "title": "Local Ignore: Unstick for Git"
+      }
+    ],
+    "configuration": {
+      "title": "Local Ignore",
+      "properties": {
+        "localIgnore.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Master switch. When false, Local Ignore does not apply."
+        },
+        "localIgnore.autoUnstick": {
+          "type": "boolean",
+          "default": true,
+          "description": "When HEAD is behind upstream and incoming commits touch configured skip-worktree paths, clear skip-worktree on those paths so pull can proceed."
+        },
+        "localIgnore.autoRetryScmPull": {
+          "type": "boolean",
+          "default": true,
+          "description": "After auto-unstick because incoming commits touch configured paths, run SCM Pull once. Does not pull for a failed terminal git pull."
+        },
+        "localIgnore.files": {
+          "type": "array",
+          "default": [],
+          "description": "Git-root-relative files to hide locally. Each entry is always written to .git/info/exclude and skip-worktree is always attempted.",
+          "items": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Path relative to the Git repository root. Use / separators. Files only."
+              },
+              "delete": {
+                "type": "boolean",
+                "default": false,
+                "description": "If true, unlink the working-tree file after hide (not directories)."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/galloween/local-ignore.git"
+  },
+  "bugs": {
+    "url": "https://github.com/galloween/local-ignore/issues"
+  },
+  "homepage": "https://github.com/galloween/local-ignore#readme",
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npx --yes @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.0",
+    "typescript": "^5.5.0"
+  }
+}
