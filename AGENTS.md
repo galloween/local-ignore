@@ -1,6 +1,6 @@
 # Local Ignore
 
-VS Code / Cursor extension. On folder open, hide configured paths from `git status` / commits by **always** doing both:
+VS Code / Cursor extension (`local-ignore`, publisher `galloween`). On folder open, hide configured paths from `git status` / commits by **always** doing both:
 
 1. Upsert the path in `.git/info/exclude` (no-op for tracked files today; kicks in if they become untracked).
 2. `git update-index --skip-worktree -- <path>` (no-op / non-zero if the path is not in the index — log and continue; **never** `git add` to make skip-worktree apply).
@@ -9,7 +9,7 @@ Then optional unlink if `delete` is true.
 
 No tracked/untracked branching in the happy path. Git ignores whichever lever does not apply.
 
-This file is the implementer spec. `README.md` is the marketplace listing. Keep README user-facing; do not paste this plan into it.
+This file is the implementer spec. `README.md` is the marketplace listing. Keep README user-facing; do not paste this spec into it. Do not paste user-facing marketing into this file.
 
 ## Product rules
 
@@ -37,10 +37,13 @@ Rewrite that block from the **full** current `localIgnore.files` path list. Leav
   - workspace trust granted
   - `localIgnore.*` settings change
   - **file created or changed** at a configured path (`vscode.workspace.createFileSystemWatcher` per git-root-relative path — so a `git pull` that writes the file back gets deleted again while the window is open)
-  - **Git repository state change** while the window is open: subscribe to the built-in Git extension’s `API.repositories[].state.onDidChange` (and `onDidOpenRepository`) and debounce-apply. This covers checkout, pull, merge, and worktree switches done from the editor SCM UI.
-- Provide a command **Local Ignore: Apply Now** that re-runs the same logic.
-- Provide **Local Ignore: Restore Path…** (quick-pick from config): `--no-skip-worktree` (ignore non-zero), `git checkout -- <path>` if tracked, remove the path from the managed `exclude` block.
-- Provide **Local Ignore: Unstick for Git** (manual): clear skip-worktree and `git checkout --` those paths from `HEAD`.
+  - **Git repository state change** while the window is open: subscribe to the built-in Git extension’s `API.repositories[].state.onDidChange` (and `onDidOpenRepository`) and debounce-apply (`DEBOUNCE_MS` 300). This covers checkout, pull, merge, and worktree switches done from the editor SCM UI.
+- Re-create file watchers when workspace folders or `localIgnore.files` change.
+- If the Git extension API is missing, still apply on startup/watchers; SCM-triggered reapply is best-effort.
+- Commands:
+  - **Local Ignore: Apply Now** (`localIgnore.apply`): re-runs the same apply logic.
+  - **Local Ignore: Restore Path…** (`localIgnore.restore`): quick-pick from config; `--no-skip-worktree` (ignore non-zero), `git checkout -- <path>` if tracked, remove the path from the managed `exclude` block.
+  - **Local Ignore: Unstick for Git** (`localIgnore.unstick`): clear skip-worktree and `git checkout --` those paths from `HEAD`.
 - **Automate the skip-worktree vs pull fight** (`localIgnore.autoUnstick` boolean, default `true`). Git will not let an extension mutate the index *during* a pull (the index is locked; there is no pre-merge hook). Do this instead, on debounced `state.onDidChange` / after apply:
   1. If `HEAD` is behind `@{upstream}` **and** `git diff --name-only HEAD...@{upstream}` intersects configured paths **and** those paths still have skip-worktree → **unstick only those paths** (this is the “Git will refuse” pattern).
   2. If `localIgnore.autoRetryScmPull` is `true` (default `true`) **and** we just unstuck because of that pattern **and** we are not already retrying → `vscode.commands.executeCommand('git.pull')` **once**, then apply/delete again. Guard with a per-repo flag so it cannot loop.
@@ -85,32 +88,12 @@ Rewrite that block from the **full** current `localIgnore.files` path list. Leav
 - Do not use `--no-verify` or change `core.hooksPath`.
 - Quote paths so spaces work. `mcp.json` under `.cursor/` must work.
 
-## Implementation plan
-
-1. Scaffold a TypeScript VS Code extension in this directory (`generator-code` / `yo code` **New Extension (TypeScript)** or equivalent `package.json` + `src/extension.ts` + `tsconfig.json` + `.vscodeignore`). Package name: `local-ignore`. Display name: `Local Ignore`. Publisher: use the implementer’s VS Marketplace publisher id (placeholder `galloween` if unknown — change before publish). License: MIT.
-2. `engines.vscode`: a current Cursor-compatible range, e.g. `^1.85.0`.
-3. `activationEvents`: `onStartupFinished`.
-4. Contribute configuration:
-   - `localIgnore.enable` boolean default `true`
-   - `localIgnore.autoUnstick` boolean default `true`
-   - `localIgnore.autoRetryScmPull` boolean default `true`
-   - `localIgnore.files` array of objects with `path` (string, required) and `delete` (boolean, default `false`)
-5. Contribute commands:
-   - `localIgnore.apply`
-   - `localIgnore.restore`
-   - `localIgnore.unstick`
-6. `activate`: register commands, config watcher, workspace folder watcher, trust watcher, file watchers, Git API `onDidOpenRepository` / `state.onDidChange`; call apply once.
-7. Core module `applyLocalIgnore(folder)`: resolve git root → for each config path: upsert exclude → try skip-worktree → optional unlink (with the tracked+failed-skip guard).
-8. Debounce apply (e.g. 300ms) so folder+config+git+fs events do not stampede. Re-create file watchers when workspace folders or `localIgnore.files` change.
-9. Optional Git extension: `const gitExt = vscode.extensions.getExtension('vscode.git')?.exports.getAPI(1)`. If missing, still apply on startup/watchers; SCM-triggered reapply is best-effort.
-10. Manual test: both a tracked and an untracked dummy get the exclude line; only the tracked one gets `S` in `ls-files -v`; skip-worktree on the untracked one is a logged non-zero, not a crash.
-11. `vsce package` produces a `.vsix`. Cursor: Install from VSIX. Marketplace: `vsce publish` when the publisher is ready.
-
 ## Code conventions
 
 - TypeScript strict. No `require()`. ES module or CJS — match the VS Code generator default; do not fight it.
 - No UI framework. No webview in v1.
-- Keep the extension tiny: `extension.ts` + `git.ts` + `paths.ts` + `exclude.ts` is enough.
+- Modules: `src/extension.ts` (apply / watchers / commands), `src/git.ts` (Git CLI), `src/paths.ts` (path validation), `src/exclude.ts` (managed exclude block). Keep the extension tiny.
+- Core apply is `applyLocalIgnore` in `src/extension.ts`: resolve git root → for each config path: upsert exclude → try skip-worktree → optional unlink (with the tracked+failed-skip guard).
 - Use the Git extension API only as a **signal** (repo opened / HEAD or index changed). Index flags and deletes still go through the Git CLI.
 
 ## Settings example (canonical)
@@ -130,9 +113,3 @@ Put this in **User** settings. After apply, that checkout no longer has the proj
 
 - Apply: exclude block contains the path; `git update-index --skip-worktree` either sets `S` or fails with “did not match” for untracked. `git status` does not list the path. Optional delete removes a file, not a directory.
 - Restore: no skip-worktree, exclude line gone, tracked file restorable from HEAD.
-
-## Publish checklist
-
-- Icon 128×128, `README.md` (marketplace), `CHANGELOG.md`, `LICENSE`.
-- `vsce package` then install the VSIX in Cursor and VS Code once each.
-- Do not document husky/Bold workarounds in the marketplace README; one sentence that apply always writes exclude and always tries skip-worktree is enough.

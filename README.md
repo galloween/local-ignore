@@ -1,23 +1,34 @@
 # Local Ignore
 
-Hide paths from `git status` and commits **only on your machine**. Every apply does both:
+Hide files from `git status` and commits **on this machine only**. The rest of the team is unchanged.
 
-- `.git/info/exclude` (local gitignore, not committed)
-- `git update-index --skip-worktree` (hides **tracked** local changes)
+Every apply does both:
 
-Whichever does not apply, Git ignores. You do not choose.
+- write the path into `.git/info/exclude` (local ignore list; not committed)
+- run `git update-index --skip-worktree` (hides **tracked** files)
 
-Works in Visual Studio Code and Cursor (Install from VSIX or the Marketplace).
+Git uses whichever of those applies. You do not pick.
+
+Works in **Visual Studio Code** and **Cursor**. Search **Local Ignore** in the Extensions panel.
 
 ## When to use it
 
-- A repo ships a **tracked** file you never want locally (project MCP config).
-- You keep a **local-only untracked** file (scratch notes, a private env file the team did not gitignore).
-- You use many Git worktrees and User settings, without committing `.gitignore`.
+- The repo tracks a file you never want locally (for example project `.cursor/mcp.json`).
+- You keep an untracked private file the team did not gitignore.
+- You use several Git worktrees and want one ignore list in **User** settings, not a committed `.gitignore`.
+
+## Install
+
+1. Extensions panel → search **Local Ignore** → Install.  
+   VS Code uses the Visual Studio Marketplace; Cursor uses Open VSX. Same extension id: `galloween.local-ignore`.
+2. Add `localIgnore.files` to **User** settings (see below).
+3. Open a **trusted** Git folder. Check **Output** → **Local Ignore**.
+
+To install a `.vsix` by hand: Command Palette → **Extensions: Install from VSIX…**
 
 ## Settings
 
-User settings (recommended) or workspace settings:
+Prefer **User** settings. Workspace settings work, but if you commit `.vscode/settings.json`, everyone who clones the repo gets your list.
 
 ```json
 {
@@ -28,63 +39,56 @@ User settings (recommended) or workspace settings:
 }
 ```
 
-| Field | Meaning |
+| Setting | Meaning |
 | --- | --- |
-| `path` | Path relative to the **Git repository root**. Use `/`, no `..`, no absolute paths. Files only. |
-| `delete` | `false` (default): hide the path; keep the file on disk. `true`: hide, then delete the working-tree file. |
+| `localIgnore.files` | List of files to hide. |
+| `path` | Relative to the **Git repository root** (not the VS Code folder, if those differ). Use `/`. Files only — no directories, globs, `..`, or absolute paths. |
+| `delete` | `false` (default): hide the path, leave the file on disk. `true`: hide, then delete the working-tree file. |
+| `localIgnore.enable` | Master switch. Default `true`. |
+| `localIgnore.autoUnstick` | Default `true`. Temporarily clear skip-worktree when incoming commits touch those paths so Git can pull. |
+| `localIgnore.autoRetryScmPull` | Default `true`. After that unstick, run **SCM Pull** once. Does not pull for a failed terminal `git pull`. |
 
-Tracked vs untracked: both levers, every time. Exclude is harmless on tracked files. skip-worktree is a no-op on untracked files.
+**Cursor MCP:** `delete: true` on `.cursor/mcp.json` only makes sense if your servers live in `~/.cursor/mcp.json`. Otherwise that window loses the project MCP servers.
 
-Master switch: `localIgnore.enable` (default `true`).
+## What it does
 
-**Cursor MCP example:** deleting `.cursor/mcp.json` in each checkout only makes sense if your servers live in the user-level Cursor MCP config (`~/.cursor/mcp.json`). Otherwise those project servers disappear in that window.
-
-Prefer User settings. If you put this in `.vscode/settings.json` and commit it, everyone who clones the repo gets your ignore list.
-
-## What it does while the editor is open
-
-When you open a trusted Git folder, and again when folders or these settings change, Local Ignore for each configured path:
+On a trusted Git folder — at startup, when folders or `localIgnore.*` settings change, when a listed file is created or changed, and after SCM checkout/pull/merge in this window — for each configured path:
 
 1. Writes the path into a managed block in `.git/info/exclude`.
-2. Runs `git update-index --skip-worktree` (fine if Git says the path is not in the index).
-3. If `delete` is true, deletes the file (not a directory).
+2. Runs `git update-index --skip-worktree` (safe if Git says the path is not in the index).
+3. If `delete` is true, deletes the file (never a directory).
 
-It **re-applies** (debounced) if the file comes back, or after SCM checkout/pull/merge in this window.
+**Worktrees:** skip-worktree is per checkout. `.git/info/exclude` is usually **shared** for the whole clone.
 
-**Worktrees:** `skip-worktree` is per checkout. `.git/info/exclude` is usually **shared** for the whole clone (every worktree).
+## Pulls
+
+Git will not update skip-worktree files while the index is locked. If you are behind upstream **and** the incoming commits touch a configured path, Local Ignore clears skip-worktree on **those** paths only, then retries **SCM Pull** once (defaults on).
+
+A failed **terminal** `git pull` is not retried for you. After the unstick, pull again. Turn this off with `localIgnore.autoUnstick` / `localIgnore.autoRetryScmPull`.
 
 ## Commands
 
-- **Local Ignore: Apply Now** — run the same logic without reloading the window.
-- **Local Ignore: Restore Path…** — clear skip-worktree and/or remove the managed exclude line; restore tracked content from `HEAD` when applicable.
-- **Local Ignore: Unstick for Git** — temporarily restore configured paths if you want to do it by hand. With defaults on, the extension unsticks those paths when you are behind upstream **and** the incoming commits touch them, then retries **SCM Pull** once. A failed terminal `git pull` still needs a second pull after the unstick.
+- **Local Ignore: Apply Now** — run the same hide logic now.
+- **Local Ignore: Restore Path…** — pick a configured path: clear skip-worktree, restore tracked content from `HEAD` if needed, remove it from the managed exclude block. The next apply puts it back if it is still in settings.
+- **Local Ignore: Unstick for Git** — clear skip-worktree and check those paths out from `HEAD` (manual).
 
-Logs: **Output** panel → **Local Ignore**.
+Logs: **Output** → **Local Ignore**.
 
-## What it will not do
+## Limits
 
-- Untrack a file for the whole team or rewrite history. Exclude is local; skip-worktree is local. Neither is `git rm --cached`.
-- Apply while the folder is closed.
-- Delete directories or match globs (v1 is exact file paths).
-- Inject into a `git pull` that is already running (index is locked). Defaults auto-unstick **after** Git refuses, then retry SCM Pull once. Terminal: unstick, then pull again. Turn off with `localIgnore.autoUnstick` / `localIgnore.autoRetryScmPull`.
-
-## Install
-
-Marketplace: search **Local Ignore** (when published).
-
-From a VSIX:
-
-1. Command Palette → **Extensions: Install from VSIX…**
-2. Reload the window, add `localIgnore.files` to User settings, reopen the repo.
+- Does not untrack a file for the team (`git rm --cached`) or rewrite history. Exclude and skip-worktree stay on your machine.
+- Does nothing while the folder is closed, or in an untrusted workspace.
+- Exact file paths only. No globs, no directories.
+- Does not finish a `git pull` that is already running.
 
 ## Requirements
 
-- Git on `PATH`, or `git.path` set like the built-in Git extension.
-- A trusted workspace (VS Code / Cursor workspace trust).
+- Git on `PATH`, or `git.path` set the same way as the built-in Git extension.
+- Workspace trust granted.
 
 ## Privacy
 
-The extension only runs `git` and optional local file deletes for paths you listed. It does not upload your repositories.
+The extension runs `git` and optional local deletes for paths you listed. It does not upload your repositories.
 
 ## License
 
