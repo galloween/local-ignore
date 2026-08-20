@@ -42,16 +42,16 @@ Do not ship a fake LSP or fake DAP. LSP starts when a matching buffer opens. DAP
 
 ---
 
-## Why not Git hooks (checked on hibob-web-client)
+## Why not Git hooks
 
-Assumption that “Cursor/Husky means global hooks never run” is too crude. Measured in the user’s main work repo:
+Confirmed on a large monorepo, including a live experiment (not just reading config):
 
-- Local `.git/config` has `core.hooksPath = .husky/_` (Husky 9, `prepare`: `husky || true`).
-- The **same file** later `[include]`s Bold Agent: `/Library/Application Support/Bold Agent/Resources/bold_git_tools/config`, which sets `core.hooksPath` to Bold’s directory.
-- Git last-writer-wins **inside the file**. Effective hooks dir is Bold (`git rev-parse --git-path hooks`). Every hook name is a symlink to `bold_git`.
-- **lint-staged still runs.** `.husky/pre-commit` calls `npx lint-staged`. So Bold **chains** `pre-commit` into Husky. That is Bold’s behavior, not Git’s contract.
-- Chaining `pre-commit` does not prove `post-checkout` / `post-merge` / `post-rewrite` are forwarded. Those are the hooks apply-on-pull would need.
-- Local Ignore must not set `core.hooksPath` or `--no-verify`. Do not add hooks. Exclude + skip-worktree from our process only.
+- Repos that use Husky (or similar) set **local** `core.hooksPath`. Git uses one hooks directory. Local config always beats global (`system → global → local → worktree`).
+- The same `.git/config` can later `[include]` another tool that sets `core.hooksPath` again. Last writer in that file wins. `git rev-parse --git-path hooks` is the source of truth, not the first `hooksPath` line.
+- **Global hooks do not fire there.** Pointing `~/.gitconfig` `core.hooksPath` at test `post-checkout` / `post-merge` / `post-commit` scripts, then running real commits, checkouts, and merges: no scripts ran. The same fake global config **did** fire in a brand-new vanilla repo with no local `hooksPath`. The mechanism works; a local override kills it.
+- Editors and extra Git helpers may wrap every hook name in their own binary. **`pre-commit` can still reach Husky** (lint-staged still ran on a real commit) if the wrapper chains. That is the wrapper’s behavior, not Git’s contract.
+- This monorepo had **no** Husky `post-checkout` / `post-merge` / `post-commit`. For those events the wrapper is the only thing Git will invoke, and it will not consult `~/.gitconfig`. A working `pre-commit` chain does not give you apply-on-pull/checkout.
+- Do not “fix” this by setting `git config core.hooksPath` in the clone (breaks Husky and whatever else owns that socket). Do not add Local Ignore as a Husky hook. Do not set `core.hooksPath` or `--no-verify` from this project. Exclude + skip-worktree from our process only.
 
 ---
 
@@ -176,7 +176,7 @@ Minimal MCP surface: `@modelcontextprotocol/sdk` **or** a tiny handshake without
 1. **`local-ignore`** (`skills/local-ignore/SKILL.md` in this repo, or `~/.agents/skills/local-ignore`) — Git safety rules while implementing and testing.
 2. Repo **`AGENTS.md`** — treat as the implementer spec; MCP must not violate Safety / Git invocation.
 3. **`refactor-discipline`** if splitting `applyLocalIgnore` out of `src/extension.ts` so the VS Code host stays thin.
-4. **`unit-test-writer` / `unit-test-runner`** for argv parsing, exclude block rewrite, and apply guards (no `git add`). This repo may not have tests yet; add a small node test runner rather than Nx (`nx run … ChromeHeadless` is for other workspaces).
+4. **`unit-test-writer` / `unit-test-runner`** for argv parsing, exclude block rewrite, and apply guards (no `git add`). This repo may not have tests yet; add a small Node test runner. Do not assume another workspace’s test command.
 5. After implementation, **`code-review-self`** then ship only if the user asks for commit/PR (`pr-open` / review-and-ship). Do not commit unless asked.
 
 ---
