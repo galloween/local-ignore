@@ -2,7 +2,7 @@
   "name": "local-ignore",
   "displayName": "Local Ignore",
   "description": "Hide paths from git status and commits on this machine only: exclude + skip-worktree, every apply.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "galloween",
   "license": "MIT",
   "icon": "media/icon.png",
